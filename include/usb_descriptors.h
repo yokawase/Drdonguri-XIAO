@@ -18,7 +18,7 @@ extern "C" {
 // 病院DLP監視ソフト（SKYSEA等）に一般周辺機器として認識させ、マスストレージ(MSC)は完全遮断
 // ============================================================================
 
-#define DONGURI_IEEE1284_DEVICE_ID "MFG:Generic;MDL:Custom-Text-Only;CMD:TEXT;CLS:PRINTER;DES:Generic Text Only;"
+#define DONGURI_IEEE1284_DEVICE_ID "MFG:MedArt;MDL:Dr.Dongly-Z XIAO Coprocessor;CMD:TEXT;CLS:PRINTER;DES:Dr.Dongly-Z XIAO Coprocessor;"
 #define DONGURI_PRINTER_REQ_GET_DEVICE_ID   0
 #define DONGURI_PRINTER_REQ_GET_PORT_STATUS 1
 #define DONGURI_PRINTER_REQ_SOFT_RESET      2

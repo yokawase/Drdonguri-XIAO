@@ -112,8 +112,10 @@ public:
   void dispatchStream(const char* stream, size_t length, TypingProgressCallback progressCb = nullptr);
 
 private:
+  void sendReportReliable(KeyReport* rep, bool isKeyUp = false);
   USBHIDKeyboard& _kbd;
   KeyboardLayoutMode _layout;
+  char _lastChar;
 };
 
 #endif // TYPING_ENGINE_H

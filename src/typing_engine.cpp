@@ -1,9 +1,10 @@
 #include "typing_engine.h"
 #include <string.h>
-#include "esp_task_wdt.h"
+
+extern "C" bool tud_hid_n_ready(uint8_t instance);
 
 DonguriTypingEngine::DonguriTypingEngine(USBHIDKeyboard& keyboard)
-  : _kbd(keyboard), _layout(KBD_LAYOUT_JIS) {
+  : _kbd(keyboard), _layout(KBD_LAYOUT_JIS), _lastChar(0) {
 }
 
 void DonguriTypingEngine::begin() {
@@ -15,41 +16,57 @@ void DonguriTypingEngine::setKeyboardLayout(KeyboardLayoutMode layout) {
   _layout = layout;
 }
 
+void DonguriTypingEngine::sendReportReliable(KeyReport* rep, bool isKeyUp) {
+  int maxRetries = isKeyUp ? 8 : 3;
+  for (int attempt = 0; attempt < maxRetries; attempt++) {
+    uint32_t waitStart = millis();
+    while (!tud_hid_n_ready(0) && (millis() - waitStart < 40)) {
+      delay(1);
+    }
+    _kbd.sendReport(rep);
+    if (!isKeyUp) break;
+    delay(2);
+    if (tud_hid_n_ready(0)) break;
+  }
+}
+
 void DonguriTypingEngine::forceReleaseAll() {
   KeyReport rep;
   memset(&rep, 0, sizeof(KeyReport));
-  _kbd.sendReport(&rep);
+  sendReportReliable(&rep, true);
   delay(2);
-  _kbd.sendReport(&rep); // 二重送出による脱落防止
+  sendReportReliable(&rep, true); // 二重送出によるKeyUp脱落完全防止
   delay(TYPING_INTER_REPORT_DELAY_MS);
 }
 
 void DonguriTypingEngine::clearAltMenuTrap() {
+  _lastChar = 0;
   KeyReport rep;
   memset(&rep, 0, sizeof(KeyReport));
   rep.modifiers = 0x02; // KEYBOARD_MODIFIER_LEFTSHIFT
-  _kbd.sendReport(&rep);
+  sendReportReliable(&rep, false);
   delay(TYPING_INTER_REPORT_DELAY_MS);
 
   memset(&rep, 0, sizeof(KeyReport));
-  _kbd.sendReport(&rep);
+  sendReportReliable(&rep, true);
   delay(2);
-  _kbd.sendReport(&rep);
+  sendReportReliable(&rep, true);
   delay(TYPING_INTER_REPORT_DELAY_MS);
 }
 
 void DonguriTypingEngine::resetImeState() {
+  _lastChar = 0;
   KeyReport rep;
   for (int i = 0; i < 2; i++) {
     memset(&rep, 0, sizeof(KeyReport));
     rep.keys[0] = KEY_JIS_NONCONVERT;
-    _kbd.sendReport(&rep);
+    sendReportReliable(&rep, false);
     delay(TYPING_INTER_REPORT_DELAY_MS);
 
     memset(&rep, 0, sizeof(KeyReport));
-    _kbd.sendReport(&rep);
+    sendReportReliable(&rep, true);
     delay(2);
-    _kbd.sendReport(&rep);
+    sendReportReliable(&rep, true);
     delay(TYPING_INTER_REPORT_DELAY_MS);
   }
 }
@@ -235,6 +252,7 @@ void DonguriTypingEngine::sendGreekG(const char* romaji) {
 }
 
 void DonguriTypingEngine::safeWrite(uint8_t key) {
+  _lastChar = 0;
   KeyReport rep;
   memset(&rep, 0, sizeof(KeyReport));
   if (key == ' ') {
@@ -250,23 +268,29 @@ void DonguriTypingEngine::safeWrite(uint8_t key) {
   } else {
     rep.keys[0] = key;
   }
-  _kbd.sendReport(&rep);
+  sendReportReliable(&rep, false);
   delay(TYPING_INTER_REPORT_DELAY_MS);
 
   memset(&rep, 0, sizeof(KeyReport));
-  _kbd.sendReport(&rep);
+  sendReportReliable(&rep, true);
   delay(2);
-  _kbd.sendReport(&rep);
+  sendReportReliable(&rep, true);
   delay(TYPING_INTER_REPORT_DELAY_MS);
 }
 
 void DonguriTypingEngine::sendSafeChar(char c) {
+  // 同一キー連続打鍵時（nn, kk, tt, ss 等）のチャタリング防止フィルタ回避＆長押し誤認防止
+  if (c == _lastChar && c != 0) {
+    delay(12);
+  }
+  _lastChar = c;
+
   KeyReport rep;
   memset(&rep, 0, sizeof(KeyReport));
 
   if (c >= 'a' && c <= 'z') {
     rep.keys[0] = (uint8_t)(0x04 + (c - 'a'));
-    _kbd.sendReport(&rep);
+    sendReportReliable(&rep, false);
     delay(TYPING_INTER_REPORT_DELAY_MS);
     forceReleaseAll();
     return;
@@ -274,21 +298,21 @@ void DonguriTypingEngine::sendSafeChar(char c) {
   if (c >= 'A' && c <= 'Z') {
     rep.modifiers = 0x02; // Left Shift
     rep.keys[0] = (uint8_t)(0x04 + (c - 'A'));
-    _kbd.sendReport(&rep);
+    sendReportReliable(&rep, false);
     delay(TYPING_INTER_REPORT_DELAY_MS);
     forceReleaseAll();
     return;
   }
   if (c >= '1' && c <= '9') {
     rep.keys[0] = (uint8_t)(0x1E + (c - '1'));
-    _kbd.sendReport(&rep);
+    sendReportReliable(&rep, false);
     delay(TYPING_INTER_REPORT_DELAY_MS);
     forceReleaseAll();
     return;
   }
   if (c == '0') {
     rep.keys[0] = 0x27;
-    _kbd.sendReport(&rep);
+    sendReportReliable(&rep, false);
     delay(TYPING_INTER_REPORT_DELAY_MS);
     forceReleaseAll();
     return;
@@ -298,13 +322,13 @@ void DonguriTypingEngine::sendSafeChar(char c) {
   if (c == ' ')  {
     rep.modifiers = 0x02; // Shift + Space でMS-IME ON時でも確実に半角スペース送出
     rep.keys[0] = 0x2C;
-    _kbd.sendReport(&rep);
+    sendReportReliable(&rep, false);
     delay(TYPING_INTER_REPORT_DELAY_MS);
     forceReleaseAll();
     return;
   }
-  if (c == '\t') { rep.keys[0] = 0x2B; _kbd.sendReport(&rep); delay(TYPING_INTER_REPORT_DELAY_MS); forceReleaseAll(); return; }
-  if (c == '\n' || c == '\r') { rep.keys[0] = 0x28; _kbd.sendReport(&rep); delay(TYPING_INTER_REPORT_DELAY_MS); forceReleaseAll(); return; }
+  if (c == '\t') { rep.keys[0] = 0x2B; sendReportReliable(&rep, false); delay(TYPING_INTER_REPORT_DELAY_MS); forceReleaseAll(); return; }
+  if (c == '\n' || c == '\r') { rep.keys[0] = 0x28; sendReportReliable(&rep, false); delay(TYPING_INTER_REPORT_DELAY_MS); forceReleaseAll(); return; }
 
   // ==========================================================================
   // US (101/104) キーボード配列モード時のマッピング
@@ -346,7 +370,7 @@ void DonguriTypingEngine::sendSafeChar(char c) {
       case '?':  rep.modifiers = 0x02; rep.keys[0] = 0x38; break; // Shift + /
       default: return;
     }
-    _kbd.sendReport(&rep);
+    sendReportReliable(&rep, false);
     delay(TYPING_INTER_REPORT_DELAY_MS);
     forceReleaseAll();
     return;
@@ -392,17 +416,18 @@ void DonguriTypingEngine::sendSafeChar(char c) {
     default: return;
   }
 
-  _kbd.sendReport(&rep);
+  sendReportReliable(&rep, false);
   delay(TYPING_INTER_REPORT_DELAY_MS);
   forceReleaseAll();
 }
 
 void DonguriTypingEngine::dispatchStream(const char* stream, size_t length, TypingProgressCallback progressCb) {
   if (stream == nullptr || length == 0) return;
+  _lastChar = 0;
 
   size_t i = 0;
   while (i < length) {
-    esp_task_wdt_reset();
+    yield();
     if (progressCb != nullptr) {
       progressCb((int)i, (int)length);
     }
@@ -648,7 +673,7 @@ void DonguriTypingEngine::dispatchStream(const char* stream, size_t length, Typi
         memset(&rep, 0, sizeof(KeyReport));
         rep.modifiers = 0x04;
         rep.keys[0] = 0x28;
-        _kbd.sendReport(&rep);
+        sendReportReliable(&rep, false);
         delay(TYPING_INTER_REPORT_DELAY_MS);
         forceReleaseAll();
         clearAltMenuTrap();
@@ -660,7 +685,7 @@ void DonguriTypingEngine::dispatchStream(const char* stream, size_t length, Typi
         memset(&rep, 0, sizeof(KeyReport));
         rep.modifiers = 0x01;
         rep.keys[0] = 0x28;
-        _kbd.sendReport(&rep);
+        sendReportReliable(&rep, false);
         delay(TYPING_INTER_REPORT_DELAY_MS);
         forceReleaseAll();
         i += 12;

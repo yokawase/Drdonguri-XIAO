@@ -330,7 +330,7 @@ void sendBleAck(const char* ackType, uint16_t sessionId, const char* detail = ""
     pNusTxCharacteristic->setValue((uint8_t*)message, strlen(message));
     pNusTxCharacteristic->notify();
   }
-  delay(6);
+  delay(currentState == STATE_TYPING ? 1 : 6);
 }
 
 void forceReleaseAllModifiers() {
@@ -441,9 +441,9 @@ void dispatchSafeStreamWithAhoCorasick(const char* buf, size_t total, uint16_t s
     s_lastProgressMs = millis();
 
     g_typingEngine.dispatchStream(buf, total, [](int cur, int tot) {
-      // 500ms経過ごと、または完了時にBLEキープアライブ進捗通知を送出し、Supervision Timeout（切断）を未然に防止
+      // 800ms経過ごと、または完了時にBLEキープアライブ進捗通知を送出し、Supervision Timeout（切断）を未然に防止
       uint32_t now = millis();
-      if (now - s_lastProgressMs > 450 || cur == tot) {
+      if (now - s_lastProgressMs > 800 || cur == tot) {
         s_lastProgressMs = now;
         char pDetail[32];
         int pct = tot > 0 ? (cur * 100 / tot) : 0;
@@ -722,8 +722,8 @@ void setup() {
   USB.usbClass(TUSB_CLASS_MISC);          // 0xEF (Windows Composite IAD 必須規格)
   USB.usbSubClass(MISC_SUBCLASS_COMMON);  // 0x02
   USB.usbProtocol(MISC_PROTOCOL_IAD);     // 0x01
-  USB.firmwareVersion(0x0252);
-  USB.productName("Dr.Dongly-Z XIAO");
+  USB.firmwareVersion(0x0253);
+  USB.productName("Dr.Dongly-Z XIAO Coprocessor");
   USB.manufacturerName("MedArt");
   USB.begin();
   Keyboard.releaseAll();
@@ -794,7 +794,7 @@ void setup() {
     BLECharacteristic::PROPERTY_NOTIFY
   );
   BLE2902* p2902Nus = new BLE2902();
-  p2902Nus->setNotifications(true);
+  p2902Nus->setNotifications(false);
   pNusTxCharacteristic->addDescriptor(p2902Nus);
   pNusService->start();
 
