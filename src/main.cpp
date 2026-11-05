@@ -435,7 +435,22 @@ void dispatchSafeStreamWithAhoCorasick(const char* buf, size_t total, uint16_t s
       strstr(buf, "[H]") != nullptr || strstr(buf, "[A]") != nullptr ||
       strstr(buf, "[SAFE]") != nullptr || strstr(buf, "[IME_RESET]") != nullptr ||
       strstr(buf, "<Z>") != nullptr || strstr(buf, "<K>") != nullptr) {
-    g_typingEngine.dispatchStream(buf, total);
+    static uint32_t s_lastProgressMs = 0;
+    static uint16_t s_activeSessionId = 0;
+    s_activeSessionId = sessionId;
+    s_lastProgressMs = millis();
+
+    g_typingEngine.dispatchStream(buf, total, [](int cur, int tot) {
+      // 500ms経過ごと、または完了時にBLEキープアライブ進捗通知を送出し、Supervision Timeout（切断）を未然に防止
+      uint32_t now = millis();
+      if (now - s_lastProgressMs > 450 || cur == tot) {
+        s_lastProgressMs = now;
+        char pDetail[32];
+        int pct = tot > 0 ? (cur * 100 / tot) : 0;
+        snprintf(pDetail, sizeof(pDetail), "%d%%,%d/%d", pct, cur, tot);
+        sendBleAck("TYPING_PROGRESS", s_activeSessionId, pDetail);
+      }
+    });
     return;
   }
 
@@ -561,11 +576,16 @@ class MyServerCallbacks : public BLEServerCallbacks {
 
   void onDisconnect(BLEServer* pServer) override {
     isBleConnected = false;
-    currentState = STATE_WAITING_BLE;
-    drainBleQueue();
-    secureWipeMessageContext();
-    Keyboard.releaseAll();
-    setLedColor(0, 0, 64);
+    // ★最重要：打鍵中 (STATE_TYPING) は assembledBuffer の読み進めを保護するため
+    // secureWipeMessageContext() や Keyboard.releaseAll() は絶対に実行しない！
+    // 打鍵が最後まで完了した後に dispatchOutput() の末尾で安全にクリーンアップされる。
+    if (currentState != STATE_TYPING) {
+      currentState = STATE_WAITING_BLE;
+      drainBleQueue();
+      secureWipeMessageContext();
+      Keyboard.releaseAll();
+      setLedColor(0, 0, 64);
+    }
     pServer->startAdvertising();
   }
 };
@@ -657,6 +677,15 @@ void handleUsbSerialCommands() {
     } else {
       USBSerial.printf("{\"found\":false,\"searchUs\":%lu,\"icd10\":\"%s\"}\n", (unsigned long)elapsedUs, icd.c_str());
     }
+  } else if (line.startsWith("CMD:TEST_STREAM:")) {
+    String streamStr = line.substring(16);
+    USBSerial.printf("{\"test_stream_start\":%u}\n", streamStr.length());
+    g_typingEngine.dispatchStream(streamStr.c_str(), streamStr.length(), [](int cur, int tot) {
+      if (cur % 50 == 0 || cur == tot) {
+        USBSerial.printf("{\"progress\":[%d,%d]}\n", cur, tot);
+      }
+    });
+    USBSerial.println("{\"test_stream_end\":true}");
   } else if (line == "CMD:LAYOUT:US") {
     g_typingEngine.setKeyboardLayout(KBD_LAYOUT_US);
     USBSerial.println("{\"layout\":\"US\"}");

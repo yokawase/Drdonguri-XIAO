@@ -1,5 +1,6 @@
 #include "typing_engine.h"
 #include <string.h>
+#include "esp_task_wdt.h"
 
 DonguriTypingEngine::DonguriTypingEngine(USBHIDKeyboard& keyboard)
   : _kbd(keyboard), _layout(KBD_LAYOUT_JIS) {
@@ -401,6 +402,7 @@ void DonguriTypingEngine::dispatchStream(const char* stream, size_t length, Typi
 
   size_t i = 0;
   while (i < length) {
+    esp_task_wdt_reset();
     if (progressCb != nullptr) {
       progressCb((int)i, (int)length);
     }
