@@ -228,25 +228,9 @@ void DonguriTypingEngine::sendHiraganaH(const char* romaji) {
 }
 
 void DonguriTypingEngine::sendGreekG(const char* romaji) {
-  if (romaji == nullptr || romaji[0] == '\0') return;
-
-  bool sentAny = false;
-  for (size_t i = 0; romaji[i] != '\0'; i++) {
-    if (romaji[i] != ' ' && (uint8_t)romaji[i] < 0x80) {
-      sendSafeChar(romaji[i]);
-      sentAny = true;
-    }
-  }
-  if (!sentAny) return;
-  delay(20);
-
-  safeWrite(' ');
-  delay(30);
-  safeWrite(' ');
-  delay(35);
-  safeWrite(KEY_RETURN);
-  delay(40);
-  forceReleaseAll();
+  // 【同音異義語 Space 2回確定ロジックの完全廃止】
+  // 電カルIME候補変動による誤爆を根絶するため、通常の漢字確定 (Space 1回 ➔ Enter) へ統一
+  sendKanjiZ(romaji);
 }
 
 void DonguriTypingEngine::safeWrite(uint8_t key) {
@@ -539,7 +523,7 @@ void DonguriTypingEngine::dispatchStream(const char* stream, size_t length, Typi
       }
       romaji[rlen] = '\0';
       if (rlen > 0) {
-        sendGreekG(romaji);
+        sendKanjiZ(romaji);
       }
       continue;
     }
