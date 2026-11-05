@@ -26,6 +26,7 @@
 // ============================================================================
 
 extern "C" bool tud_mounted(void);
+extern "C" bool tud_hid_n_ready(uint8_t instance);
 
 // Seeed Studio XIAO ESP32S3 オンボード黄色ユーザーLED (GPIO 21, Active LOW)
 #define XIAO_LED_PIN        21
@@ -688,12 +689,12 @@ void setup() {
   Keyboard.begin();
 
   USB.VID(0x303A);
-  USB.PID(0x8025);
-  USB.usbClass(0x00);
-  USB.usbSubClass(0x00);
-  USB.usbProtocol(0x00);
-  USB.firmwareVersion(0x0250);
-  USB.productName("Dr.Dongly-Z XIAO Coprocessor");
+  USB.PID(0x8027); // Windowsレジストリキャッシュ破棄・完全強制再列挙
+  USB.usbClass(TUSB_CLASS_MISC);          // 0xEF (Windows Composite IAD 必須規格)
+  USB.usbSubClass(MISC_SUBCLASS_COMMON);  // 0x02
+  USB.usbProtocol(MISC_PROTOCOL_IAD);     // 0x01
+  USB.firmwareVersion(0x0252);
+  USB.productName("Dr.Dongly-Z XIAO");
   USB.manufacturerName("MedArt");
   USB.begin();
   Keyboard.releaseAll();
