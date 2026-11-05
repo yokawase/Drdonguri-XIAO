@@ -294,7 +294,14 @@ void DonguriTypingEngine::sendSafeChar(char c) {
   }
 
   // 共通制御キー・共通記号
-  if (c == ' ')  { rep.keys[0] = 0x2C; _kbd.sendReport(&rep); delay(TYPING_INTER_REPORT_DELAY_MS); forceReleaseAll(); return; }
+  if (c == ' ')  {
+    rep.modifiers = 0x02; // Shift + Space でMS-IME ON時でも確実に半角スペース送出
+    rep.keys[0] = 0x2C;
+    _kbd.sendReport(&rep);
+    delay(TYPING_INTER_REPORT_DELAY_MS);
+    forceReleaseAll();
+    return;
+  }
   if (c == '\t') { rep.keys[0] = 0x2B; _kbd.sendReport(&rep); delay(TYPING_INTER_REPORT_DELAY_MS); forceReleaseAll(); return; }
   if (c == '\n' || c == '\r') { rep.keys[0] = 0x28; _kbd.sendReport(&rep); delay(TYPING_INTER_REPORT_DELAY_MS); forceReleaseAll(); return; }
 
@@ -414,7 +421,9 @@ void DonguriTypingEngine::dispatchStream(const char* stream, size_t length, Typi
           i += 7;
           break;
         }
-        if (stream[i] == '[' || stream[i] == '<' || stream[i] == '\n' || stream[i] == '\r') {
+        if ((stream[i] == '[' && i + 1 < length && stream[i + 1] == '/') ||
+            (stream[i] == '<' && i + 1 < length && stream[i + 1] == '/') ||
+            stream[i] == '\n' || stream[i] == '\r') {
           break;
         }
         if (rlen < sizeof(romaji) - 1) {
@@ -438,7 +447,9 @@ void DonguriTypingEngine::dispatchStream(const char* stream, size_t length, Typi
           i += 4;
           break;
         }
-        if (stream[i] == '[' || stream[i] == '<' || stream[i] == '\n' || stream[i] == '\r') {
+        if ((stream[i] == '[' && i + 1 < length && stream[i + 1] == '/') ||
+            (stream[i] == '<' && i + 1 < length && stream[i + 1] == '/') ||
+            stream[i] == '\n' || stream[i] == '\r') {
           break;
         }
         if (rlen < sizeof(romaji) - 1) {
@@ -462,7 +473,9 @@ void DonguriTypingEngine::dispatchStream(const char* stream, size_t length, Typi
           i += 4;
           break;
         }
-        if (stream[i] == '[' || stream[i] == '<' || stream[i] == '\n' || stream[i] == '\r') {
+        if ((stream[i] == '[' && i + 1 < length && stream[i + 1] == '/') ||
+            (stream[i] == '<' && i + 1 < length && stream[i + 1] == '/') ||
+            stream[i] == '\n' || stream[i] == '\r') {
           break;
         }
         if (rlen < sizeof(romaji) - 1) {
@@ -486,7 +499,9 @@ void DonguriTypingEngine::dispatchStream(const char* stream, size_t length, Typi
           i += 4;
           break;
         }
-        if (stream[i] == '[' || stream[i] == '<' || stream[i] == '\n' || stream[i] == '\r') {
+        if ((stream[i] == '[' && i + 1 < length && stream[i + 1] == '/') ||
+            (stream[i] == '<' && i + 1 < length && stream[i + 1] == '/') ||
+            stream[i] == '\n' || stream[i] == '\r') {
           break;
         }
         if (rlen < sizeof(romaji) - 1) {
@@ -513,7 +528,9 @@ void DonguriTypingEngine::dispatchStream(const char* stream, size_t length, Typi
           i += 4;
           break;
         }
-        if (stream[i] == '[' || stream[i] == '<' || stream[i] == '\n' || stream[i] == '\r') {
+        if ((stream[i] == '[' && i + 1 < length && stream[i + 1] == '/') ||
+            (stream[i] == '<' && i + 1 < length && stream[i + 1] == '/') ||
+            stream[i] == '\n' || stream[i] == '\r') {
           break;
         }
         if (rlen < sizeof(romaji) - 1) {
@@ -535,7 +552,9 @@ void DonguriTypingEngine::dispatchStream(const char* stream, size_t length, Typi
           i += 6;
           break;
         }
-        if (stream[i] == '[' || stream[i] == '<' || stream[i] == '\n' || stream[i] == '\r') {
+        if ((stream[i] == '[' && i + 1 < length && stream[i + 1] == '/') ||
+            (stream[i] == '<' && i + 1 < length && stream[i + 1] == '/') ||
+            stream[i] == '\n' || stream[i] == '\r') {
           break;
         }
         i++;
@@ -552,7 +571,9 @@ void DonguriTypingEngine::dispatchStream(const char* stream, size_t length, Typi
           i += 5;
           break;
         }
-        if (stream[i] == '[' || stream[i] == '<' || stream[i] == '\n' || stream[i] == '\r') {
+        if ((stream[i] == '[' && i + 1 < length && stream[i + 1] == '/') ||
+            (stream[i] == '<' && i + 1 < length && stream[i + 1] == '/') ||
+            stream[i] == '\n' || stream[i] == '\r') {
           break;
         }
         if (rlen < sizeof(romaji) - 1) {
@@ -582,7 +603,9 @@ void DonguriTypingEngine::dispatchStream(const char* stream, size_t length, Typi
           i += 6;
           break;
         }
-        if (stream[i] == '[' || stream[i] == '<' || stream[i] == '\n' || stream[i] == '\r') {
+        if ((stream[i] == '[' && i + 1 < length && stream[i + 1] == '/') ||
+            (stream[i] == '<' && i + 1 < length && stream[i + 1] == '/') ||
+            stream[i] == '\n' || stream[i] == '\r') {
           break;
         }
         if (alen < sizeof(ascii) - 1) {
@@ -603,7 +626,9 @@ void DonguriTypingEngine::dispatchStream(const char* stream, size_t length, Typi
         if (strncmp(&stream[i], "[/RAW]", 6) == 0 || strncmp(&stream[i], "</RAW>", 6) == 0) {
           i += 6; break;
         }
-        if (stream[i] == '[' || stream[i] == '<' || stream[i] == '\n' || stream[i] == '\r') {
+        if ((stream[i] == '[' && i + 1 < length && stream[i + 1] == '/') ||
+            (stream[i] == '<' && i + 1 < length && stream[i + 1] == '/') ||
+            stream[i] == '\n' || stream[i] == '\r') {
           break;
         }
         sendSafeChar(stream[i]);
