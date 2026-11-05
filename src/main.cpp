@@ -43,10 +43,10 @@ extern "C" bool tud_mounted(void);
 // プロトコル定数
 #define MAX_PAYLOAD_SIZE    4096
 #define MAX_PACKETS         24
-#define MAX_PACKET_LEN      512
+#define MAX_PACKET_LEN      256
 #define BLE_CHUNK_SIZE      (8 + MAX_PACKET_LEN)
-#define BLE_QUEUE_SIZE      32
-#define RX_TIMEOUT_MS       1500
+#define BLE_QUEUE_SIZE      48
+#define RX_TIMEOUT_MS       3000
 #define MAX_RETRY_COUNT     3
 
 enum SystemState {
@@ -298,11 +298,7 @@ bool lookupKanjiYomiPsram(const char* utf8Char, char* outRomaji, size_t maxLen) 
 // ============================================================================
 void secureWipeMessageContext() {
   if (g_msgCtx == nullptr) return;
-  volatile uint8_t* p = (volatile uint8_t*)g_msgCtx;
-  size_t n = sizeof(MessageContext);
-  while (n--) {
-    *p++ = 0;
-  }
+  memset((void*)g_msgCtx, 0, sizeof(MessageContext));
 }
 
 void drainBleQueue() {
@@ -544,7 +540,8 @@ void dispatchOutput() {
   delay(30);
 
   secureWipeMessageContext();
-  drainBleQueue();
+  // ★重要：drainBleQueue() は呼ばない！
+  // 打鍵中または打鍵直後に届いた次のセッション（SessionInitHeader等）をキューから蒸発させるのを防ぐ
 
   currentState = isBleConnected ? STATE_BLE_CONNECTED : STATE_WAITING_BLE;
   setLedColor(0, isBleConnected ? 64 : 0, isBleConnected ? 0 : 64);
@@ -581,7 +578,12 @@ class MyCallbacks : public BLECharacteristicCallbacks {
       BleQueueItem item;
       item.length = (uint16_t)len;
       memcpy(item.data, pData, len);
-      xQueueSend(bleQueue, &item, 0);
+      // キューが満杯の場合は最古のアイテムを破棄して最新アイテムを確実に保持
+      if (xQueueSend(bleQueue, &item, 0) != pdTRUE) {
+        BleQueueItem dummy;
+        xQueueReceive(bleQueue, &dummy, 0);
+        xQueueSend(bleQueue, &item, 0);
+      }
     }
   }
 };
@@ -899,8 +901,11 @@ void loop() {
             (currentState == STATE_RECEIVING && g_msgCtx->receivedCount == g_msgCtx->totalPackets))) {
           sendBleAck("REMOTE_TRIGGER_ACCEPTED", g_msgCtx->sessionId);
           dispatchOutput();
+        } else if (currentState == STATE_TYPING) {
+          sendBleAck("ALREADY_TYPING", g_msgCtx ? g_msgCtx->sessionId : 0);
         } else {
-          sendBleAck("ERR_NOT_READY_TO_TYPE", 0);
+          // すでに打鍵完了済みの場合は安全に通知（ERR_NOT_READY_TO_TYPE を返すと PWA がエラー中断するため絶対に ERR_ は返さない）
+          sendBleAck("ALREADY_COMPLETED", 0);
         }
         continue;
       }
@@ -972,8 +977,8 @@ void loop() {
       continue;
     }
 
-    // C. データスロットフレーム
-    if (item.length >= sizeof(SlotHeader)) {
+    // C. データスロットフレーム (ヘッダ8B + ペイロード)
+    if (item.length > sizeof(SlotHeader)) {
       uint16_t sid = readUint16LE(item.data);
       uint8_t seqNo = item.data[2];
       uint8_t mode = item.data[3];
@@ -1070,7 +1075,8 @@ void loop() {
   }
 
   // 仮想プリンタ受信データのBLE転送
-  if (s_printer_queue != nullptr) {
+  // ★カルテ転送中 (STATE_RECEIVING / STATE_TYPING) は ACK 衝突を防ぐためアイドル時のみ転送
+  if (s_printer_queue != nullptr && currentState == STATE_BLE_CONNECTED) {
     PrinterChunkItem prnItem;
     while (xQueueReceive(s_printer_queue, &prnItem, 0) == pdTRUE) {
       if (isBleConnected && pTxRxCharacteristic != nullptr) {
@@ -1084,7 +1090,7 @@ void loop() {
     }
   }
 
-  if (s_printer_job_active && (millis() - s_last_printer_rx_ms > 400)) {
+  if (s_printer_job_active && currentState == STATE_BLE_CONNECTED && (millis() - s_last_printer_rx_ms > 400)) {
     s_printer_job_active = false;
     if (isBleConnected && pTxRxCharacteristic != nullptr) {
       char endMsg[32];
